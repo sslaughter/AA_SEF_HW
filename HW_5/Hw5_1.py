@@ -34,8 +34,7 @@ def state_dynamics(x,t,dt,Q, include_noise = True):
 	b_t1 = x[2]+wt[2]
 
 	x_t1 = np.array([p_t1,a_t1,b_t1]).reshape((-1,1))
-	#print(x_t1)
-	#print(x_t1)
+
 	return x_t1
 
 
@@ -51,7 +50,7 @@ def get_A(x,dt,t):
 def get_C(x,dt,t):
 
 	C = np.zeros((1,3))
-	C[0,0] = 1
+	C[0,0] = 1.0
 
 	return C
 
@@ -59,6 +58,7 @@ def get_C(x,dt,t):
 def get_measurement(x,t,dt,R):
 
 	wt = get_random_vector(0,R)
+	#print("Measurement noise: %f" % wt)
 	y = x[0]+wt
 
 	return y
@@ -77,10 +77,10 @@ Q[0,0] = .1
 R = .1
 dt = .1
 
-mu_tt = np.array([0,0,10]).reshape((-1,1))
+mu_tt = np.array([0,0,10.0]).reshape((-1,1))
 sig_tt = np.identity(3)
 
-steps = 500
+steps = 2000
 t_ = np.arange(0,steps*dt,step = dt)
 
 # Create history of measurement vector
@@ -90,7 +90,6 @@ s_s = 3 #dimension of the state vector
 
 xt = np.zeros((np.size(t_),s_s)) # Create history of predicted state vector
 xt[0,:] = get_random_vector(mu_tt,sig_tt).T
-print("it's getting here")
 
 x_s = np.zeros((np.size(t_),s_s)) # Create history of simulated(true) state vector
 x_s[0,0] = xt[0,0]
@@ -98,13 +97,13 @@ x_s[0,1] = a_t
 x_s[0,2] = b_t
 
 
-sigs = []
-sigs.append(sig_tt)
+sigs = np.zeros((s_s,s_s,np.size(t_)))
+sigs[:,:,0] = sig_tt
+
+
 
 Q_e = .01*np.identity(3)
 Q_e[0,0] = .1
-print("Q_e: ")
-print(Q_e)
 
 mu_tt = xt[0,:].reshape((-1,1))
 
@@ -112,32 +111,27 @@ mu_tt = xt[0,:].reshape((-1,1))
 for t in range(1, np.size(t_)):
 	
 	#Predict
-	mu_t1_t = state_dynamics(mu_tt,t,dt,Q, False) # No noise in the prediction step of the state
+	mu_t1_t = state_dynamics(mu_tt,t_[t],dt,Q, False) # No noise in the prediction step of the state
 
-	A = get_A(mu_tt,dt,t)
+	A = get_A(mu_tt,dt,t_[t])
 	sig_t1_t = A@sig_tt@A.T + Q_e
+	#sig_t1_t = A@sig_tt@A.T + Q
 	
 	#Get "true" state
-	x_s[t,:] = np.transpose(state_dynamics(x_s[t-1,:].reshape((-1,1)),t,dt,Q)) # Noise included in "true" state propogation
+	x_s[t,:] = np.transpose(state_dynamics(x_s[t-1,:].reshape((-1,1)),t_[t],dt,Q)) # Noise included in "true" state propogation
 
 	#Measure
-	yt[t,:] = np.transpose(get_measurement(x_s[t,:].reshape((-1,1)),t,dt,R)) # Noise included in measurement of "true" state
+	yt[t,:] = np.transpose(get_measurement(x_s[t,:].reshape((-1,1)),t_[t],dt,R)) # Noise included in measurement of "true" state
 
 	C = get_C(mu_t1_t,dt,t)
 
 	#Update
 	K = sig_t1_t@C.T@inv(C@sig_t1_t@C.T+R) #Kalman Gain
 
-	#print("Measurement model")
-	#print(yt[t,:].reshape((-1,1))-get_measurement(mu_t1_t,t,dt,R))
-
-	mu_tt = mu_t1_t + K@(yt[t,:].reshape((-1,1))-get_measurement(mu_t1_t,t,dt,0)) # No noise included in measurement model given the predicted state
+	mu_tt = mu_t1_t + K@(yt[t,:].reshape((-1,1))-get_measurement(mu_t1_t,t_[t],dt,0)) # No noise included in measurement model given the predicted state
 	xt[t,:] = np.transpose(mu_tt)
 	sig_tt = sig_t1_t-K@C@sig_t1_t
-	#sig_tt = sig_t1_t
-	#sig_tt[0:2,0:2] = sig_tt_
-	sigs.append(sig_tt)
-
+	sigs[:,:,t] = sig_tt
 
 
 
@@ -152,12 +146,15 @@ state_list = ["p","a","b"]
 for n in range(s_s):
 	axs[n].plot(t_,x_s[:,n], color='black')
 	axs[n].plot(t_,xt[:,n], color='red')
+	axs[n].fill_between(t_, xt[:, n] - 1.96*np.sqrt(sigs[n,n,:]), #95% confidence interval shading, adapted from test.py file that was provided
+                        xt[:, n] + 1.96 * np.sqrt(sigs[n,n,:]),
+                        color='red', alpha=0.3)
 	axs[n].set_xlabel("Time, t")
 	axs[n].set_ylabel("State Estimate")
 	axs[n].title.set_text("State: %s" % state_list[n])
 	axs[n].legend(("True", "Estimate"))
 
-
+fig.suptitle("Q = Qekf")
 #axs[0].plot(t_,yt,color="blue")
 
 plt.show()
