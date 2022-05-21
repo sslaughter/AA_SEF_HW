@@ -89,6 +89,13 @@ def get_measurement_f(x,t,dt,R):
 	y = np.zeros((4,1))
 	# We know the postion, need to measure the bearing to estimated/true features
 	#print(x)
+	print("t = ")
+	print(t)
+	print("state for measurement")
+	print(x)
+
+	print("simulated position")
+	print(x_s[t,:])
 	for i in range(4):
 		y[i,0] = -x_s[t,2] + np.arctan2((x[2*i+1,0]-x_s[t,1]),(x[2*i,0]-x_s[t,0])) + vt[i] #same measurement function, just with a known position
 		#y[i,0] = wrapToPi(y[i,0])
@@ -126,6 +133,8 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False):
 		A = get_A_f(mu_tt,dt,t)
 		
 		sig_t1_t = A@sig_tt@A.T + Q
+		print("Predicted covariance")
+		print(sig_t1_t)
 		#sig_t1_t = A@sig_tt@A.T
 		#Measure
 		yt[t,:] = np.transpose(get_measurement_f(m,t,dt,R)) #measure given simulated states and true feature location
@@ -137,18 +146,25 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False):
 		#Update
 		if not iterative:
 			K = sig_t1_t@C.T@inv(C@sig_t1_t@C.T+R) #Kalman Gain
+			print("K = ")
+			print(K)
 
 			#print("Measurement model")
 			#print(yt[t,:].reshape((-1,1))-get_measurement(mu_t1_t,t,dt,R))
-
+			print("True measeure")
+			print(yt[t,:])
 			y_inov = yt[t,:].reshape((-1,1))-get_measurement_f(mu_t1_t,t,dt,np.zeros((4,4)))
-			print(y_inov)
 			print("Yinov")
+			print(y_inov)
+			
 			#print(y_inov)
 			#keep phi within [-pi,pi] thanks to suggestions in edstem post #160/158 and code from AA274A
 			for j in range(np.size(y_inov)):
 				y_inov[j,0] = wrapToPi(y_inov[j,0])
 			#mu_tt = mu_t1_t + K@(yt[t,:].reshape((-1,1))-get_measurement_1a(mu_t1_t,t,dt,np.zeros((4,4))))
+			print("Mu correction")
+			print(K@y_inov)
+
 			mu_tt = mu_t1_t + K@(y_inov)
 			#print("K:")
 			#print(K)
@@ -157,56 +173,8 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False):
 			sig_tt = sig_t1_t-K@C@sig_t1_t
 			print(sig_tt)
 
-
-		if iterative:
-			conv = False
-			max_steps = 5
-			step = 1
-			mu_temp_i = mu_t1_t #intialize the iterative mean to the predicted mean
-			ek_mu = mu_t1_t
-			while not conv:
-				if step > max_steps:
-					#print("Reached max steps")
-					#print("Number of steps: %i, %f" % (step-1,norm(mu_diff)))
-					break
-
-				if step!=1:
-					temp_C = get_C_1a(mu_temp_i,dt,t)
-				else:
-					temp_C = C
-				K = sig_t1_t@temp_C.T@inv(temp_C@sig_t1_t@temp_C.T+R)
-
-				if step == 1:
-					ek_mu = mu_temp_i + K@(yt[t,:].reshape((-1,1))-get_measurement_1a(mu_temp_i,t,dt,0))
-
-				
-				mu_temp_i1 = mu_temp_i + K@(yt[t,:].reshape((-1,1))-get_measurement_1a(mu_temp_i,t,dt,0)) + K@temp_C@(mu_temp_i-mu_t1_t)
-				mu_diff = mu_temp_i1-mu_temp_i
-				if norm(mu_diff) < .001:
-					#print("Number of steps: %i, %f" % (step,norm(mu_diff)))
-					conv = True
-
-				mu_temp_i = mu_temp_i1
-				C = temp_C
-				step = step+1
-
-		
-			mu_tt = mu_temp_i
-			#print(ek_mu - mu_tt)
-			xt[t,:] = np.transpose(mu_tt)
-			sig_tt = sig_t1_t-K@C@sig_t1_t
-
 		sigs[:,:,t] = sig_tt
 
-		'''
-		rank = np.linalg.matrix_rank((np.vstack((C,C@A,C@A@A))))
-		print(rank)
-
-		if rank == num_states:
-			print("It's observable!")
-		else:
-			print("Not observable!")
-		'''
 
 	end_time = time.time()
 	avg_time = (end_time-start_time)/np.size(t_)
@@ -214,13 +182,13 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False):
 
 
 
-R_x= .001*np.identity(4) #4 dimensional covariance for measurement noise of feature ranges
+R_x= .01*np.identity(4) #4 dimensional covariance for measurement noise of feature ranges
 #R_x= np.zeros((4,4))
 dt = .1
 s_s = 8 #dimension of the state vector
 
 Q = .01*np.identity(8) # Noise covariance for state positions
-Q_p = .1*np.identity(3) # Noise covariance for true state simulation
+Q_p = .01*np.identity(3) # Noise covariance for true state simulation
 
 #m = np.zeros((4,2)) #feature locations, each row is a feature
 m = np.zeros((8,1)) #  This is m_true
@@ -230,11 +198,11 @@ m[5,0] = 10.0# m3 = [10,10]
 m[7,0] = 10.0 # m4 = [0,10]
 
 
-steps = 1000
+steps = 300
 t_ = np.arange(0,steps*dt,step = dt)
 
 mu_o= np.array([0,0,10,0,10,10,0,10]).reshape((-1,1)) # True states as mean for initial state
-sig_o = .01*np.identity(8) # Initial covariance for the feature locations
+sig_o = 1*np.identity(8) # Initial covariance for the feature locations
 
 # Sample initial pose for feature positions
 x_o = get_random_vector(mu_o,sig_o)
@@ -261,6 +229,7 @@ x_s[0,:] = x_o_p
 for ts in range(1,np.size(t_)):
 	x_s[ts,:] = np.transpose(state_dynamics(x_s[ts-1,:].reshape((-1,1)),t_[ts],dt,Q_p))
 	#x_s[t,:] = np.transpose(dummy_state_dynamics(x_s[t-1,:].reshape((-1,1)),t,dt,Q))
+print(x_s)
 
 
 # No dynamics to the feature locations - true state is fixed

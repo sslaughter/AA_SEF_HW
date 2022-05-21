@@ -81,8 +81,8 @@ def get_C(x,dt,t):
 
 
 		#C1b
-		C[i+4,2*i+3] = (x[2*i+4,0]-x[1,0] )/norm_b #py - miy
-		C[i+4,2*i+4] = (x[0,0]-x[2*i+3,0])/norm_b #mix - px
+		C[i+4,0] = (x[2*i+4,0]-x[1,0] )/norm_b #py - miy
+		C[i+4,1] = (x[0,0]-x[2*i+3,0])/norm_b #mix - px
 		C[i+4,2] = -1
 
 		#C2
@@ -100,7 +100,7 @@ def get_measurement(x,t,dt,R):
 	for i in range(4):
 		
 		#Rnage measurement
-		y[i,0] = np.sqrt((x[2*i,0] - x[0,0])**2 + (x[2*i+1,0] - x[1,0])**2) + vt[i] # Measure distance between state positions and state feature locations
+		y[i,0] = np.sqrt((x[2*i+3,0] - x[0,0])**2 + (x[2*i+4,0] - x[1,0])**2) + vt[i] # Measure distance between state positions and state feature locations
 
 		y[i+4,0] = x[2,0] - np.arctan2((x[2*i+4,0]-x[1,0]),(x[2*i+3,0]-x[0,0])) + vt[i+4] #
 		#y[i,0] = wrapToPi(y[i,0])
@@ -122,18 +122,18 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False, smooth_eks=False):
 	#print(np.shape(sigs))
 	sigs[:,:,0] = sig_tt
 
-	A_hist = sigs = np.zeros((s_s,s_s,np.size(t_)))
+	A_hist = np.zeros((s_s,s_s,np.size(t_)))
 
 	start_time = time.time()
 	for t in range(1, np.size(t_)):
 		
 		#Predict
-		print("Mutt")
-		print(np.shape(mu_tt))
+		#print("Mutt")
+		#print(np.shape(mu_tt))
 
 		mu_t1_t = state_dynamics(mu_tt,t_[t],dt,Q, False)
-		print("Initial Mu")
-		print(np.shape(mu_t1_t))
+		#print("Initial Mu")
+		#print(np.shape(mu_t1_t))
 
 
 		A = get_A(mu_tt,dt,t)
@@ -149,29 +149,33 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False, smooth_eks=False):
 
 		#Update
 		if not iterative:
-			print("C = ")
-			print(C)
+			#print("C = ")
+			#print(C)
+			#print("predicted sig")
+			#print(sig_t1_t)
+			#print("i_csigc:")
+			#print(inv(C@sig_t1_t@C.T+R))
 			K = sig_t1_t@C.T@inv(C@sig_t1_t@C.T+R) #Kalman Gain
-			print("K = ")
-			print(np.shape(K))
+			#print("K = ")
+			#print(K)
 
 
 
 			y_inov = yt[t,:].reshape((-1,1))-get_measurement(mu_t1_t,t,dt,np.zeros((8,8)))
-			print("y_inov: ")
-			print(np.shape(y_inov))
+			#print("y_inov: ")
+			#print(y_inov)
 
 			#keep phi within [-pi,pi] thanks to suggestions in edstem post #160/158 and code from AA274A
 			for j in range(4,np.size(y_inov)):
 				y_inov[j,0] = wrapToPi(y_inov[j,0])
 
 			mu_tt = mu_t1_t + K@(y_inov)
-			print("Mu = ")
-			print(mu_tt)
+			#print("Mu = ")
+			#print(mu_tt)
 
 			xt[t,:] = np.transpose(mu_tt)
 			sig_tt = sig_t1_t-K@C@sig_t1_t
-			print(sig_tt)
+			#print(sig_tt)
 
 
 		if iterative:
@@ -179,7 +183,6 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False, smooth_eks=False):
 			max_steps = 5
 			step = 1
 			mu_temp_i = mu_t1_t #intialize the iterative mean to the predicted mean
-			ek_mu = mu_t1_t
 			while not conv:
 				if step > max_steps:
 					break
@@ -189,17 +192,24 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False, smooth_eks=False):
 				else:
 					temp_C = C
 				K = sig_t1_t@temp_C.T@inv(temp_C@sig_t1_t@temp_C.T+R)
+				#print("iekf K")
+				#print(K)
 
-				if step == 1:
-					ek_mu = mu_temp_i + K@(yt[t,:].reshape((-1,1))-get_measurement(mu_temp_i,t,dt,np.zeros((8,8))))
+				y_inov_temp = yt[t,:].reshape((-1,1))-get_measurement(mu_temp_i,t,dt,np.zeros((8,8)))
 
-				
-				mu_temp_i1 = mu_temp_i + K@(yt[t,:].reshape((-1,1))-get_measurement(mu_temp_i,t,dt,np.zeros((8,8)))) + K@temp_C@(mu_temp_i-mu_t1_t)
-				mu_diff = mu_temp_i1-mu_temp_i
+				for j in range(4,np.size(y_inov_temp)):
+					y_inov_temp[j,0] = wrapToPi(y_inov_temp[j,0])
+
+
+				mu_temp_i_ = mu_t1_t + K@(y_inov_temp) + K@temp_C@(mu_temp_i-mu_t1_t)
+				#print("iterated mu:")
+				#print(mu_temp_i_)
+				mu_diff = mu_temp_i_-mu_temp_i
+				#print(mu_diff)
 				if norm(mu_diff) < .01:
 					conv = True
 
-				mu_temp_i = mu_temp_i1
+				mu_temp_i = mu_temp_i_
 				C = temp_C
 				step = step+1
 
@@ -221,17 +231,36 @@ def run_ekf(t_,x_true,Q,R,num_states, sig_i, iterative=False, smooth_eks=False):
 	sigs_s = np.zeros((s_s,s_s,np.size(t_)))
 	sigs_s[:,:,-1] = sigs[:,:,-1]
 
+	print(sigs[:,:,0])
+
 	if smooth_eks:
 		
 		#backward pass
-		for t in reversed(range(0, np.size(t_)-1)):
-			K_t_s = sigs[:,:,t]@A_hist[:,:,t]@inv(sigs[:,:,t+1])
+		for t in reversed(range(1, np.size(t_)-1)):
+			#print("t: %i" %t)
+			#print("A-hist")
+			#print(A_hist[:,:,t])
+			#print(sigs[:,:,t])
+			sig_s_t = A_hist[:,:,t]@sigs[:,:,t]@A_hist[:,:,t].T + Q#Progressions of previously calculated sigma passed through dynamics
+			K_t_s = sigs[:,:,t]@A_hist[:,:,t].T@inv(sig_s_t)
 
-			f_t_mu_t = state_dynamics(xt[t,:].reshape((-1,1)),t_[t],dt,Q, False) #This is previously calculated mean at time t passed through dynamics
-			xt_s[t,:] = np.transpose(xt[t,:].reshape((-1,1))+K_t_s@(xt_s[t+1,:].reshape((-1,1))-f_t_mu_t))
+			f_t_mu_t = state_dynamics(xt[t,:].reshape((-1,1)),t_[t],dt,Q, True) #This is previously calculated mean at time t passed through dynamics
+			#print("Propogated state:")
+			#print(f_t_mu_t)
+			#print("Previous estimated state:")
+			#print(xt[t,:].reshape((-1,1)))
+			#print("Next smoothed state:")
+			#print(xt_s[t+1,:].reshape((-1,1)))
+			#print("KTS")
+			#print(K_t_s)
+			#print("Adjustment = ")
+			#print(xt_s[t+1,:].reshape((-1,1))-f_t_mu_t)
+			inov = xt_s[t+1,:].reshape((-1,1))-f_t_mu_t
+			inov[2,0] = wrapToPi(inov[2,0]) #Wrap theta subtraction
+			xt_s[t,:] = np.transpose(xt[t,:].reshape((-1,1))+K_t_s@(inov))
 
-			sig_s_t = A_hist[:,:,t]@sigs[:,:,t]@A_hist[:,:,t].T #Progressions of previously calculated sigma passed through dynamics
-			sigs_s[:,:,t] = sigs[:,:,t] + K_t_s@(sigs_s[:,:,t+1] - sig_s_t)
+			
+			sigs_s[:,:,t] = sigs[:,:,t] + K_t_s@(sigs_s[:,:,t+1] - sig_s_t)@K_t_s.T
 
 
 	if smooth_eks:
@@ -265,7 +294,7 @@ steps = 300
 t_ = np.arange(0,steps*dt,step = dt)
 
 mu_o= np.array([0,0,0,0,0,10,0,10,10,0,10]).reshape((-1,1)) # True states as mean for initial state
-sig_o = .1*np.identity(11) # Initial covariance for the state
+sig_o = 1*np.identity(11) # Initial covariance for the state
 
 # Sample initial pose for feature positions
 x_o = get_random_vector(mu_o,sig_o)
@@ -299,7 +328,7 @@ for t in range(1,np.size(t_)):
 
 
 a_xt,a_yt,a_sigs,a_time = run_ekf(t_,x_s,Q,R,s_s,sig_o) #EKF SLAM
-b_xt,b_yt,b_sigs,b_time = run_ekf(t_,x_s,Q,R,s_s,sig_o,False) #iEKF SLAM - this is more broken than the others right now
+b_xt,b_yt,b_sigs,b_time = run_ekf(t_,x_s,Q,R,s_s,sig_o,True) #iEKF SLAM - this is more broken than the others right now
 c_xt,c_yt,c_sigs,c_time, c_a_hist, c_xs, c_sigs_s = run_ekf(t_,x_s,Q,R,s_s,sig_o,False,True) #EKS
 
 
@@ -320,7 +349,8 @@ for n in range(num_filters):
 #fig, axs = plt.subplots(4,1)
 
 for f in range(num_filters):
-	fig, axs = plt.subplots(4,1)
+	fig, axs = plt.subplots(3,1)
+	plt.figure(2)
 
 	for n in range(3):
 		axs[n].plot(t_,x_s[:,n], color='black')
@@ -337,13 +367,18 @@ for f in range(num_filters):
 	#Plot feature locations
 
 	for i in range(4):
-		axs[3].scatter(m[2*i,0],m[2*i+1,0], color='black',s=12)
-		axs[3].scatter(filter_states[f][:,2*i+3],filter_states[f][:,2*i+4], color='red',s=5)
+		plt.scatter(m[2*i,0],m[2*i+1,0], color='black',s=12)
+		plt.scatter(filter_states[f][:,2*i+3],filter_states[f][:,2*i+4], color='red',s=5)
 
-	axs[3].plot(filter_states[f][:,0],filter_states[f][:,1],color = 'orange')
-	axs[3].plot(x_s[:,0],x_s[:,1],color = 'blue')
+	plt.plot(filter_states[f][:,0],filter_states[f][:,1],color = 'orange')
+	plt.plot(x_s[:,0],x_s[:,1],color = 'blue')
+	plt.xlabel("x")
+	plt.ylabel("y")
+	plt.legend(("True", "Estimate"))
 
 	plt.show()
+
+
 
 '''
 plt.figure(2)
